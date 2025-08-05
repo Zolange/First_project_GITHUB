@@ -1,1 +1,82 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
 
+// Wi-Fi credentials
+const char* ssid = "KALANSO_Telefilani";
+const char* password = "M@l!BeDjo09";
+
+// MQTT broker details
+const char* mqtt_broker = "a2249c968f424394925bcdd597fff0c7.s1.eu.hivemq.cloud";
+const int mqtt_port = 8883;
+const char* mqtt_username = "Sylla";
+const char* mqtt_password = "Alert_o001";
+
+// MQTT topic
+const char* topic_publish_ir = "esp32/ir_sensor";
+
+// GPIO
+#define LED1 2         // GPIO pour la LED (choisis un pin de sortie)
+#define ButtonA 18     // GPIO pour le bouton
+
+WiFiClientSecure wifiClient;
+PubSubClient mqttClient(wifiClient);
+long previous_time = 0;
+
+void setupMQTT() {
+  mqttClient.setServer(mqtt_broker, mqtt_port);
+}
+
+void reconnect() {
+  while (!mqttClient.connected()) {
+    Serial.print("Connecting to MQTT...");
+    String clientId = "ESP32Client-" + String(random(0xffff), HEX);
+    if (mqttClient.connect(clientId.c_str(), mqtt_username, mqtt_password)) {
+      Serial.println("Connected to MQTT.");
+    } else {
+      Serial.print("Failed, rc=");
+      Serial.print(mqttClient.state());
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(LED1, OUTPUT);
+  pinMode(ButtonA, INPUT_PULLUP);
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi Connected");
+
+  wifiClient.setInsecure(); // pour le TLS sans certificat
+  setupMQTT();
+}
+
+void loop() {
+  if (!mqttClient.connected()) {
+    reconnect();
+  }
+  mqttClient.loop();
+
+  long now = millis();
+  if (now - previous_time > 5000) {  // toutes les 5 secondes
+    previous_time = now;
+
+    bool buttonStatus = digitalRead(ButtonA);
+
+    digitalWrite(LED1, buttonStatus == HIGH ? HIGH : LOW);
+
+    const char* message = buttonStatus == HIGH ? "1" : "0";
+    mqttClient.publish(topic_publish_ir, message);
+
+    Serial.print("Bouton : ");
+    Serial.println(message);
+  }
+}
